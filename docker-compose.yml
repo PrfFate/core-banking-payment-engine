@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  # 1. PostgreSQL - Account & Card Service için
+  postgres:
+    image: postgres:15-alpine
+    container_name: core-postgres
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: account_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - core-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d account_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Oracle Database - Payment & Transfer Service için (Sistemin Kalbi)
+  oracle:
+    image: gvenzl/oracle-free:23-slim-faststart
+    container_name: core-oracle
+    environment:
+      ORACLE_PASSWORD: password # system ve sys kullanıcıları için şifre
+      APP_USER: payment_user # Otomatik oluşturulacak uygulama kullanıcısı
+      APP_PASSWORD: password
+    ports:
+      - "1521:1521"
+    volumes:
+      - oracle_data:/opt/oracle/oradata
+    networks:
+      - core-network
+    healthcheck:
+      test: ["CMD-SHELL", "echo 'exit' | sqlplus -L system/password@localhost:1521/FREEPDB1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 3. Apache Kafka (KRaft Mode - Zookeper gerektirmez) - Mesaj Kuyruğu
+  kafka:
+    image: bitnami/kafka:3.7
+    container_name: core-kafka
+    environment:
+      # KRaft (Kafka Raft) ayarları
+      KAFKA_CFG_NODE_ID: 1
+      KAFKA_CFG_PROCESS_ROLES: controller,broker
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+    ports:
+      - "29092:29092"
+    volumes:
+      - kafka_data:/bitnami/kafka
+    networks:
+      - core-network
+
+  # 4. Redis - Gateway Rate Limiting ve Caching için
+  redis:
+    image: redis:7-alpine
+    container_name: core-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - core-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  postgres_data:
+  oracle_data:
+  kafka_data:
+  redis_data:
+
+networks:
+  core-network:
+    driver: bridge
