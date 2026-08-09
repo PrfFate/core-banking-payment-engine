@@ -16,6 +16,8 @@ import java.util.Map;
 public class PaymentRepository {
 
     private final SimpleJdbcCall transferProcedure;
+    private final SimpleJdbcCall processResultProcedure;
+    private final SimpleJdbcCall reconcileProcedure;
 
     public PaymentRepository(JdbcTemplate jdbcTemplate) {
         this.transferProcedure = new SimpleJdbcCall(jdbcTemplate)
@@ -29,6 +31,23 @@ public class PaymentRepository {
                         new SqlOutParameter("p_result_code", Types.VARCHAR),
                         new SqlOutParameter("p_error_message", Types.VARCHAR)
                 );
+                
+        this.processResultProcedure = new SimpleJdbcCall(jdbcTemplate)
+                .withCatalogName("PKG_ACCOUNT_CORE")
+                .withProcedureName("PROC_PROCESS_PAYMENT_RESULT")
+                .declareParameters(
+                        new SqlParameter("p_tx_id", Types.NUMERIC),
+                        new SqlParameter("p_status", Types.VARCHAR),
+                        new SqlOutParameter("p_out_result", Types.VARCHAR)
+                );
+
+        this.reconcileProcedure = new SimpleJdbcCall(jdbcTemplate)
+                .withCatalogName("PKG_ACCOUNT_CORE")
+                .withProcedureName("PROC_RECONCILE_STUCK_PAYMENTS")
+                .declareParameters(
+                        new SqlParameter("p_minutes_threshold", Types.NUMERIC),
+                        new SqlOutParameter("p_out_count", Types.NUMERIC)
+                );
     }
 
     public TransferResult executeTransfer(String referenceCode, Long senderId, Long receiverId, BigDecimal amount) {
@@ -40,6 +59,23 @@ public class PaymentRepository {
 
         Map<String, Object> out = transferProcedure.execute(in);
         return new TransferResult((String) out.get("p_result_code"), (String) out.get("p_error_message"));
+    }
+
+    public String processPaymentResult(Long txId, String status) {
+        SqlParameterSource in = new MapSqlParameterSource()
+                .addValue("p_tx_id", txId)
+                .addValue("p_status", status);
+
+        Map<String, Object> out = processResultProcedure.execute(in);
+        return (String) out.get("p_out_result");
+    }
+
+    public Integer reconcileStuckPayments(int minutesThreshold) {
+        SqlParameterSource in = new MapSqlParameterSource()
+                .addValue("p_minutes_threshold", minutesThreshold);
+
+        Map<String, Object> out = reconcileProcedure.execute(in);
+        return ((Number) out.get("p_out_count")).intValue();
     }
 
     public record TransferResult(String resultCode, String errorMessage) {

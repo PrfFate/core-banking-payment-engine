@@ -1,2 +1,9 @@
 PLAN.md
 .env
+target/
+*.class
+*.jar
+*.war
+.idea/
+*.iml
+.vscode/

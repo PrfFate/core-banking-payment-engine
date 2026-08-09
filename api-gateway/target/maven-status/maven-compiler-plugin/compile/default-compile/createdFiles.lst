@@ -1,6 +1,0 @@
-com/corebanking/gateway/filter/JwtAuthenticationFilter$Config.class
-com/corebanking/gateway/ApiGatewayApplication.class
-com/corebanking/gateway/filter/JwtAuthenticationFilter.class
-com/corebanking/gateway/util/JwtUtils.class
-com/corebanking/gateway/config/RateLimiterConfig.class
-com/corebanking/gateway/config/SecurityConfig.class

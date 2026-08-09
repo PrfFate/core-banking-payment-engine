@@ -50,6 +50,17 @@ CREATE OR REPLACE PACKAGE PKG_ACCOUNT_CORE AS
         p_result_code OUT VARCHAR2,
         p_error_message OUT VARCHAR2
     );
+
+    PROCEDURE PROC_PROCESS_PAYMENT_RESULT(
+        p_tx_id IN NUMBER,
+        p_status IN VARCHAR2,
+        p_out_result OUT VARCHAR2
+    );
+
+    PROCEDURE PROC_RECONCILE_STUCK_PAYMENTS(
+        p_minutes_threshold IN NUMBER,
+        p_out_count OUT NUMBER
+    );
 END PKG_ACCOUNT_CORE;
 /
 
@@ -144,5 +155,65 @@ CREATE OR REPLACE PACKAGE BODY PKG_ACCOUNT_CORE AS
             LOG_AUDIT(NULL, 'TRANSFER', 'FAILED', p_error_message);
             RAISE;
     END PROC_TRANSFER_FUNDS;
+
+    PROCEDURE PROC_PROCESS_PAYMENT_RESULT(
+        p_tx_id IN NUMBER,
+        p_status IN VARCHAR2,
+        p_out_result OUT VARCHAR2
+    ) IS
+        v_sender_id NUMBER;
+        v_receiver_id NUMBER;
+        v_amount NUMBER(19,4);
+    BEGIN
+        -- Lock the transaction record if it's PENDING
+        UPDATE transactions 
+        SET status = p_status 
+        WHERE id = p_tx_id AND status = 'PENDING'
+        RETURNING sender_account_id, receiver_account_id, amount 
+        INTO v_sender_id, v_receiver_id, v_amount;
+        
+        IF SQL%ROWCOUNT = 0 THEN
+            p_out_result := 'IGNORED_OR_NOT_FOUND';
+            RETURN;
+        END IF;
+
+        IF p_status = 'SUCCESS' THEN
+            -- Add money to receiver
+            UPDATE accounts SET balance = balance + v_amount WHERE id = v_receiver_id;
+            p_out_result := 'PROCESSED_SUCCESS';
+        ELSIF p_status = 'REJECT' OR p_status = 'RECOMPENSATED' THEN
+            -- Refund money to sender
+            UPDATE accounts SET balance = balance + v_amount WHERE id = v_sender_id;
+            p_out_result := 'PROCESSED_REFUNDED';
+        END IF;
+        
+        LOG_AUDIT(p_tx_id, 'PAYMENT_RESULT', p_status, NULL);
+    EXCEPTION
+        WHEN OTHERS THEN
+            p_out_result := 'ERROR';
+            LOG_AUDIT(p_tx_id, 'PAYMENT_RESULT', 'FAILED', SQLERRM);
+            RAISE;
+    END PROC_PROCESS_PAYMENT_RESULT;
+
+    PROCEDURE PROC_RECONCILE_STUCK_PAYMENTS(
+        p_minutes_threshold IN NUMBER,
+        p_out_count OUT NUMBER
+    ) IS
+        v_count NUMBER := 0;
+        v_dummy VARCHAR2(100);
+    BEGIN
+        FOR rec IN (
+            SELECT id FROM transactions 
+            WHERE status = 'PENDING' 
+            AND created_at < SYSTIMESTAMP - NUMTODSINTERVAL(p_minutes_threshold, 'MINUTE')
+            FOR UPDATE SKIP LOCKED
+        ) LOOP
+            PROC_PROCESS_PAYMENT_RESULT(rec.id, 'RECOMPENSATED', v_dummy);
+            v_count := v_count + 1;
+        END LOOP;
+        
+        p_out_count := v_count;
+        LOG_AUDIT(NULL, 'RECONCILIATION', 'SUCCESS', 'Compensated ' || v_count || ' transactions');
+    END PROC_RECONCILE_STUCK_PAYMENTS;
 END PKG_ACCOUNT_CORE;
 /

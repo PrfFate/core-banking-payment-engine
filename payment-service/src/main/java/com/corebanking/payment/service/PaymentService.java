@@ -18,8 +18,6 @@ public class PaymentService {
 
     @Transactional
     public PaymentRepository.TransferResult executeTransfer(String idempotencyKey, TransferRequest request) {
-        log.info("Executing transfer with reference: {}", idempotencyKey);
-        
         // Oracle Procedure invocation
         PaymentRepository.TransferResult result = paymentRepository.executeTransfer(
                 idempotencyKey,
@@ -28,7 +26,6 @@ public class PaymentService {
                 request.amount()
         );
         
-        log.info("Transfer result: {}", result);
         return result;
     }
 }

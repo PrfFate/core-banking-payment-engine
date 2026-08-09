@@ -20,8 +20,6 @@ public class FastPaymentListener {
 
     @KafkaListener(topics = "fast-payments", groupId = "fast-mock-group")
     public void processPaymentEvent(String payload) {
-        log.info("Received FAST payment event: {}", payload);
-
         int chance = random.nextInt(100) + 1; // 1 to 100
 
         // Parse basic JSON manually or just construct a new JSON string to simulate response
@@ -46,6 +44,5 @@ public class FastPaymentListener {
 
         // Send to result topic
         kafkaTemplate.send("fast-payments-result", resultPayload);
-        log.info("Sent result event to fast-payments-result: {}", resultPayload);
     }
 }

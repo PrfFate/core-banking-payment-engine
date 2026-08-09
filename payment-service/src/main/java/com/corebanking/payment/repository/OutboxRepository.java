@@ -17,7 +17,7 @@ public class OutboxRepository {
     public List<OutboxRecord> fetchUnprocessedRecords() {
         String sql = "SELECT id, aggregate_type, aggregate_id, event_type, payload " +
                      "FROM outbox WHERE processed = 0 " +
-                     "FOR UPDATE SKIP LOCKED FETCH FIRST 50 ROWS ONLY";
+                     "FETCH FIRST 50 ROWS ONLY FOR UPDATE SKIP LOCKED";
         
         return jdbcTemplate.query(sql, (rs, rowNum) -> new OutboxRecord(
                 rs.getLong("id"),
